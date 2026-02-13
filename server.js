@@ -3,18 +3,22 @@ const express = require('express');
 const cors = require('cors');
 const morgan = require('morgan');
 const path = require('path');
-const { sequelize } = require('./config/db');
+const { sequelize } = require('./src/config/database');
+const errorHandler = require('./src/middleware/errorHandler');
 
 // Import routes
-const authRoutes = require('./routes/auth');
-const productRoutes = require('./routes/products');
-const cartRoutes = require('./routes/cart');
+const authRoutes = require('./src/routes/auth');
+const productRoutes = require('./src/routes/products');
+const cartRoutes = require('./src/routes/cart');
+const wishlistRoutes = require('./src/routes/wishlist');
+const orderRoutes = require('./src/routes/orders');
 
 const app = express();
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(morgan('dev'));
 
 // Serve static files from the uploads directory
@@ -24,50 +28,52 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/cart', cartRoutes);
+app.use('/api/wishlist', wishlistRoutes);
+app.use('/api/orders', orderRoutes);
 
-// Test route
+// Health check route
 app.get('/', (req, res) => {
-  res.json({ message: 'E-commerce API is running...' });
-});
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error(err.stack);
-  res.status(500).json({ 
-    success: false,
-    message: err.message || 'Internal Server Error',
-    stack: process.env.NODE_ENV === 'development' ? err.stack : {}
+  res.json({
+    success: true,
+    message: 'E-commerce API is running...',
+    version: '1.0.0',
+    endpoints: {
+      auth: '/api/auth',
+      products: '/api/products',
+      cart: '/api/cart',
+      wishlist: '/api/wishlist',
+      orders: '/api/orders',
+    },
   });
 });
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
-    success: false, 
-    message: 'Resource not found' 
+  res.status(404).json({
+    success: false,
+    message: 'Resource not found',
   });
 });
 
-// Start server
+// Error handling middleware (must be last)
+app.use(errorHandler);
+
+// Database synchronization and server start
 const PORT = process.env.PORT || 5000;
 
 const startServer = async () => {
   try {
-    // Test the database connection
-    await sequelize.authenticate();
-    console.log('Database connection has been established successfully.');
-    
-    // Sync all models with the database
-    await sequelize.sync({ alter: true });
-    console.log('All models were synchronized successfully.');
+    // Sync database
+    await sequelize.sync({ alter: process.env.NODE_ENV === 'development' });
+    console.log('Database synchronized successfully');
 
-    // Start the server
+    // Start server
     app.listen(PORT, () => {
-      console.log(`Server is running on port ${PORT}`);
-      console.log(`Environment: ${process.env.NODE_ENV}`);
+      console.log(`Server running in ${process.env.NODE_ENV} mode on port ${PORT}`);
+      console.log(`Visit http://localhost:${PORT} for API documentation`);
     });
   } catch (error) {
-    console.error('Unable to start the server:', error);
+    console.error('Failed to start server:', error);
     process.exit(1);
   }
 };
